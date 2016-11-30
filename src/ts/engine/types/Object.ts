@@ -11,24 +11,31 @@ function construct(constructor, args) {
 class Object  {
 
   point: Point;
+  velocity: Point;
+  rotation: Point;
+  renderCallback: Function;
 
   constructor (point: Point = new Point(0, 0, 0)) {
     this.point = point;
+    this.velocity = new Point(0, 0, 0);
+    this.rotation = new Point(0, 0, 0);
+    this.renderCallback = function () {
+      this.point.x += -this.velocity.x;
+      this.point.y += -this.velocity.y;
+      this.point.z += -this.velocity.z;
+    };
   }
 
   setPoint (x: number, y:number, z: number) {
     this.point = construct(Point, arguments);
   }
 
-  getPoint (): Point {
-    return this.point;
+  setVelocity (x: number, y:number, z: number) {
+    this.velocity = construct(Point, arguments);
   }
 
-  moveForward () {
-    // forwards
-    this.point.z -= 0.05;
-    // down
-    this.point.y -= 0.005;
+  setRotation (x: number, y:number, z: number) {
+    this.rotation = construct(Point, arguments);
   }
 
 }

@@ -4,8 +4,21 @@ import THREE = require("three");
 import Space = require("./types/Space");
 import Point = require("./types/Point");
 import Light = require("./types/Light");
+import Shape = require("./types/Shape");
 import Camera = require("./types/Camera");
 import Colors from "./sets/Colors";
+
+function processObjects (objects: Array<any>, internals: Object): void {
+  objects.forEach((object: any, objectIndex: number) => {
+    internals[objectIndex].position.set(object.point.x, object.point.y, object.point.z);
+    internals[objectIndex].rotation.set(
+      THREE.Math.degToRad(object.rotation.x),
+      THREE.Math.degToRad(object.rotation.y),
+      THREE.Math.degToRad(object.rotation.z)
+    );
+    object.renderCallback();
+  });
+};
 
 class HTMLCanvasElementWithFeatureDetection extends HTMLCanvasElement {
   msRequestFullscreen?(): boolean;
@@ -23,7 +36,8 @@ class Engine {
     textureLoader?: THREE.TextureLoader,
     width?: number,
     height?: number,
-    lights?: Array<THREE.PointLight>,
+    lights?: Array<THREE.AmbientLight>,
+    shapes?: Array <THREE.Mesh>,
     renderCallback?: Function
   };
 
@@ -38,6 +52,7 @@ class Engine {
     this.internals = {};
     this.internals.renderCallback = () => {};
     this.stereoEffect = stereoEffect;
+    this.camera = new Camera();
   }
 
   resize (): void {
@@ -86,38 +101,41 @@ class Engine {
   goToSpace (space: Space) {
     this.currentSpace = space;
     // camera
-    this.camera = new Camera();
-    this.camera.setPoint(0, 15, 0);
+    if (!this.camera) this.camera = new Camera();
     // scene
     this.internals.scene = new THREE.Scene();
     // camera
-    this.internals.camera = new THREE.PerspectiveCamera(90, this.internals.width / this.internals.height, 0.001, 700);
+    this.internals.camera = new THREE.PerspectiveCamera(45, this.internals.width / this.internals.height, 0.01, 10000);
     this.internals.camera.aspect = this.internals.width / this.internals.height;
     this.internals.scene.add(this.internals.camera);
     // lights
     this.internals.lights = [];
     space.lights.forEach((light: Light) => {
-      const threeLight = new THREE.PointLight(0x999999, 8, 100);
+      const threeLight = new THREE.AmbientLight(0x999999);
       this.internals.lights.push(threeLight);
       this.internals.scene.add(threeLight);
     });
-    //etc
-    var floorTexture = this.internals.textureLoader.load('images/texture.jpg');
-    floorTexture.wrapS = THREE.RepeatWrapping;
-    floorTexture.wrapT = THREE.RepeatWrapping;
-    floorTexture.repeat = new THREE.Vector2(50, 50);
-    floorTexture.anisotropy = this.internals.renderer.getMaxAnisotropy();
-    var floorMaterial = new THREE.MeshPhongMaterial({
+    // shapes
+    this.internals.shapes = [];
+    space.shapes.forEach((shape: Shape) => {
+      let texture = this.internals.textureLoader.load('images/texture.jpg');
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.repeat = new THREE.Vector2(1, 1);
+      texture.anisotropy = this.internals.renderer.getMaxAnisotropy();
+      let material = new THREE.MeshPhongMaterial({
         color: 0xffffff,
         specular: 0xffffff,
         shininess: 20,
         shading: THREE.FlatShading,
-        map: floorTexture
+        map: texture
+      });
+      let geometry = new THREE.PlaneBufferGeometry(shape.width, shape.height);
+      let threeShape = new THREE.Mesh(geometry, material);
+      // threeShape.rotation.x = -Math.PI / 2;
+      this.internals.shapes.push(threeShape);
+      this.internals.scene.add(threeShape);
     });
-    var geometry = new THREE.PlaneBufferGeometry(1000, 1000);
-    var floor = new THREE.Mesh(geometry, floorMaterial);
-    floor.rotation.x = -Math.PI / 2;
-    this.internals.scene.add(floor);
   }
 
   addSpace (): Space {
@@ -133,11 +151,10 @@ class Engine {
   render (): void {
     (function (renderer, scene) {
       // positions
-      this.currentSpace.lights.forEach((light: Light, lightIndex: number) => {
-        const point = light.getPoint();
-        this.internals.lights[lightIndex].position.set(point.x, point.y, point.z);
-      });
+      processObjects(this.currentSpace.lights, this.internals.lights);
+      processObjects(this.currentSpace.shapes, this.internals.shapes);
       this.internals.camera.position.set(this.camera.point.x, this.camera.point.y, this.camera.point.z);
+      this.camera.renderCallback();
       if (this.internals.camera.parent === null) this.internals.camera.updateMatrixWorld(false);
       // stereo effect
       if (this.stereoEffect) {

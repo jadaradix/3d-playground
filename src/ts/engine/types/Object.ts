@@ -19,20 +19,16 @@ class Object  {
   setPoint (x: number, y:number, z: number) {
     this.point = construct(Point, arguments);
   }
-  // setPoint (x: number, y: number, z: number);
-  // setPoint (point: Point);
-  // setPoint (pointOrX: Point | number, y?: number, z?: number) {
-  //   // if (pointOrX instanceof Point) {
-  //   //   this.point = pointOrX;
-  //   // } else if (typeof pointOrX === "number") {
-  //   //   this.point = Function.prototype.bind.apply(Point, arguments);
-  //   // } else {
-  //   //   throw new Error("setPoint called with invalid argument set");
-  //   // }
-  // }
 
   getPoint (): Point {
     return this.point;
+  }
+
+  moveForward () {
+    // forwards
+    this.point.z -= 0.05;
+    // down
+    this.point.y -= 0.005;
   }
 
 }

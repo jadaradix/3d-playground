@@ -20,6 +20,7 @@ class Engine {
     scene?: THREE.Scene,
     camera?: THREE.PerspectiveCamera,
     stereoCamera?: THREE.StereoCamera,
+    textureLoader?: THREE.TextureLoader,
     width?: number,
     height?: number,
     lights?: Array<THREE.PointLight>,
@@ -55,6 +56,8 @@ class Engine {
     this.internals.stereoCamera = new THREE.StereoCamera();
     this.internals.stereoCamera.aspect = 0.5;
     this.internals.stereoCamera.eyeSep = 1.0;
+    // textureLoader
+    this.internals.textureLoader = new THREE.TextureLoader();
     // element
     this.internals.element = this.internals.renderer.domElement;
     this.internals.element.addEventListener("click", (event) => {
@@ -79,7 +82,7 @@ class Engine {
     this.render();
   }
 
-  goToSpace (space: Space): this {
+  goToSpace (space: Space) {
     this.currentSpace = space;
     // camera
     this.camera = new Camera();
@@ -97,9 +100,8 @@ class Engine {
       this.internals.lights.push(threeLight);
       this.internals.scene.add(threeLight);
     });
-
-
-    var floorTexture = THREE.ImageUtils.loadTexture('images/texture.jpg');
+    //etc
+    var floorTexture = this.internals.textureLoader.load('images/texture.jpg');
     floorTexture.wrapS = THREE.RepeatWrapping;
     floorTexture.wrapT = THREE.RepeatWrapping;
     floorTexture.repeat = new THREE.Vector2(50, 50);
@@ -115,9 +117,6 @@ class Engine {
     var floor = new THREE.Mesh(geometry, floorMaterial);
     floor.rotation.x = -Math.PI / 2;
     this.internals.scene.add(floor);
-
-
-    return this;
   }
 
   addSpace (): Space {

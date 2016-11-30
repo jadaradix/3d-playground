@@ -2,7 +2,7 @@ import Engine = require("./engine");
 
 window.onload = () => {
 
-  const game = new Engine();
+  const game = new Engine(false);
 
   let space = game.addSpace();
   let light = space.addLight();

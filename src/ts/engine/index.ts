@@ -31,12 +31,13 @@ class Engine {
   spaces: Array<Space> = [];
   currentSpace: Space;
   camera: Camera;
+  stereoEffect: boolean;
 
   constructor (stereoEffect: boolean = false) {
     this.Colors = new Colors();
     this.internals = {};
-    // renderCallback
     this.internals.renderCallback = () => {};
+    this.stereoEffect = stereoEffect;
   }
 
   resize (): void {
@@ -131,24 +132,31 @@ class Engine {
 
   render (): void {
     (function (renderer, scene) {
-      this.internals.camera.position.set(this.camera.point.x, this.camera.point.y, this.camera.point.z);
-      if (this.internals.camera.parent === null) this.internals.camera.updateMatrixWorld(false);
-      this.internals.stereoCamera.update(this.internals.camera);
+      // positions
       this.currentSpace.lights.forEach((light: Light, lightIndex: number) => {
         const point = light.getPoint();
         this.internals.lights[lightIndex].position.set(point.x, point.y, point.z);
       });
-      renderer.render(scene, this.internals.camera);
-      const size = renderer.getSize();
-      if (renderer.autoClear) renderer.clear();
-      renderer.setScissorTest(true);
-      renderer.setScissor(0, 0, size.width / 2, size.height);
-      renderer.setViewport(0, 0, size.width / 2, size.height);
-      renderer.render(scene, this.internals.stereoCamera.cameraL);
-      renderer.setScissor(size.width / 2, 0, size.width / 2, size.height);
-      renderer.setViewport(size.width / 2, 0, size.width / 2, size.height);
-      renderer.render(scene, this.internals.stereoCamera.cameraR);
-      renderer.setScissorTest(false);
+      this.internals.camera.position.set(this.camera.point.x, this.camera.point.y, this.camera.point.z);
+      if (this.internals.camera.parent === null) this.internals.camera.updateMatrixWorld(false);
+      // stereo effect
+      if (this.stereoEffect) {
+        this.internals.stereoCamera.update(this.internals.camera);
+      }
+      if (this.stereoEffect) {
+        const size = renderer.getSize();
+        if (renderer.autoClear) renderer.clear();
+        renderer.setScissorTest(true);
+        renderer.setScissor(0, 0, size.width / 2, size.height);
+        renderer.setViewport(0, 0, size.width / 2, size.height);
+        renderer.render(scene, this.internals.stereoCamera.cameraL);
+        renderer.setScissor(size.width / 2, 0, size.width / 2, size.height);
+        renderer.setViewport(size.width / 2, 0, size.width / 2, size.height);
+        renderer.render(scene, this.internals.stereoCamera.cameraR);
+        renderer.setScissorTest(false);
+      } else {
+        renderer.render(scene, this.internals.camera);
+      }
       this.internals.renderCallback();
       this.resize();
     }.bind(this))(this.internals.renderer, this.internals.scene);

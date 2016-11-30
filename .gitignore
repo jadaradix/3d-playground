@@ -1,0 +1,6 @@
+.DS_Store
+Thumbs.db
+yarn.lock
+node_modules
+npm-debug.log*
+build

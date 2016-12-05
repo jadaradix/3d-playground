@@ -1,6 +1,7 @@
 ///<reference path="./three.d.ts"/>
 import THREE = require("three");
 
+import Object = require("./types/Object");
 import Space = require("./types/Space");
 import Point = require("./types/Point");
 import Light = require("./types/Light");
@@ -8,21 +9,36 @@ import Shape = require("./types/Shape");
 import Camera = require("./types/Camera");
 import Colors from "./sets/Colors";
 
-function processObjects (objects: Array<any>, internals: Object): void {
-  objects.forEach((object: any, objectIndex: number) => {
-    internals[objectIndex].position.set(object.point.x, object.point.y, object.point.z);
-    internals[objectIndex].rotation.set(
-      THREE.Math.degToRad(object.rotation.x),
-      THREE.Math.degToRad(object.rotation.y),
-      THREE.Math.degToRad(object.rotation.z)
-    );
-    object.renderCallback();
+function processObject (object: Object, internalObject: any) {
+  internalObject.position.set(object.point.x, object.point.y, object.point.z);
+  internalObject.rotation.set(
+    THREE.Math.degToRad(object.rotation.x),
+    THREE.Math.degToRad(object.rotation.y),
+    THREE.Math.degToRad(object.rotation.z)
+  );
+  object.renderCallback();
+}
+
+function processObjects (objects: Array<Object>, internals: any): void {
+  objects.forEach((object: Object, objectIndex: number) => {
+    processObject(object, internals[objectIndex]);
   });
 };
 
 class HTMLCanvasElementWithFeatureDetection extends HTMLCanvasElement {
   msRequestFullscreen?(): boolean;
   mozRequestFullScreen?(): boolean;
+}
+
+class WindowWithFeatureDetection extends Window {
+  orientation: string;
+  mozOrientation?: string;
+  screen: WindowScreenWithFeatureDetection;
+}
+
+class WindowScreenWithFeatureDetection extends Screen {
+  orientation: string;
+  mozOrientation: string;
 }
 
 class Engine {
@@ -38,7 +54,9 @@ class Engine {
     height?: number,
     lights?: Array<THREE.AmbientLight>,
     shapes?: Array <THREE.Mesh>,
-    renderCallback?: Function
+    renderCallback?: Function,
+    deviceOrientation?: any,
+    screenOrientation?: number
   };
 
   Colors: Colors;
@@ -46,20 +64,144 @@ class Engine {
   currentSpace: Space;
   camera: Camera;
   stereoEffect: boolean;
+  vrCamera: boolean;
 
-  constructor (stereoEffect: boolean = false) {
+  constructor (stereoEffect: boolean = false, vrCamera: boolean = false) {
     this.Colors = new Colors();
     this.internals = {};
     this.internals.renderCallback = () => {};
     this.stereoEffect = stereoEffect;
+    this.vrCamera = vrCamera;
     this.camera = new Camera();
   }
 
-  resize (): void {
+  onResize (): void {
     this.internals.width = window.innerWidth;
     this.internals.height = window.innerHeight;
-    // renderer
     this.internals.renderer.setSize(this.internals.width, this.internals.height);
+  }
+
+  onOrientationChange (): void {
+    const windowWithFeatureDetection = window as WindowWithFeatureDetection;
+    this.internals.screenOrientation = (() => {
+      switch (windowWithFeatureDetection.screen.orientation || windowWithFeatureDetection.screen.mozOrientation) {
+        case 'landscape-primary':
+          return 90;
+        case 'landscape-secondary':
+          return -90;
+        case 'portrait-secondary':
+          return 180;
+        case 'portrait-primary':
+          return 0;
+      }
+      return 0;
+    })();
+  }
+
+  onDeviceOrientation (e: any): void {
+    if (!e.alpha) {
+      return;
+    }
+    this.internals.camera.rotation.reorder('YXZ');
+
+
+
+    let movementSpeed = 1.0;
+    let autoAlign = true;
+    let autoForward = false;
+
+    let alpha = 0;
+    let beta = 0;
+    let gamma = 0;
+    let orient = 0;
+
+    let alignQuaternion = new THREE.Quaternion();
+    let orientationQuaternion = new THREE.Quaternion();
+
+    let quaternion = new THREE.Quaternion();
+    let quaternionLerp = new THREE.Quaternion();
+
+    let tempVector3 = new THREE.Vector3();
+    let tempMatrix4 = new THREE.Matrix4();
+    let tempEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+    let tempQuaternion = new THREE.Quaternion();
+
+    let zee = new THREE.Vector3(0, 0, 1);
+    let up = new THREE.Vector3(0, 1, 0);
+    let v0 = new THREE.Vector3(0, 0, 0);
+    let euler = new THREE.Euler();
+    let q0 = new THREE.Quaternion(); // - PI/2 around the x-axis
+    let q1 = new THREE.Quaternion(- Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+
+
+    let update = function () {
+
+      alpha = e.gamma ?
+        THREE.Math.degToRad(e.alpha) : 0; // Z
+      beta = e.beta ?
+        THREE.Math.degToRad(e.beta) : 0; // X'
+      gamma = e.gamma ?
+        THREE.Math.degToRad(e.gamma) : 0; // Y''
+      orient = this.internals.screenOrientation ?
+        THREE.Math.degToRad(this.internals.screenOrientation) : 0; // O
+
+      // The angles alpha, beta and gamma
+      // form a set of intrinsic Tait-Bryan angles of type Z-X'-Y''
+
+      // 'ZXY' for the device, but 'YXZ' for us
+      euler.set(beta, alpha, - gamma, 'YXZ');
+
+      quaternion.setFromEuler(euler);
+      quaternionLerp.slerp(quaternion, 0.5); // interpolate
+
+      // orient the device
+      if (autoAlign) orientationQuaternion.copy(quaternion); // interpolation breaks the auto alignment
+      else orientationQuaternion.copy(quaternionLerp);
+
+      // camera looks out the back of the device, not the top
+      orientationQuaternion.multiply(q1);
+
+      // adjust for screen orientation
+      orientationQuaternion.multiply(q0.setFromAxisAngle(zee, - this.orient));
+
+      this.internals.camera.quaternion.copy(alignQuaternion);
+      this.internals.camera.quaternion.multiply(orientationQuaternion);
+
+      if (autoForward) {
+        tempVector3.applyQuaternion(this.internals.camera.quaternion)
+        tempVector3
+          .set(0, 0, -1)
+          .applyQuaternion(this.internals.camera.quaternion)
+          .setLength(movementSpeed / 50); // TODO: why 50 :S
+        this.internals.camera.position.add(tempVector3);
+      }
+
+      if (autoAlign && alpha !== 0) {
+        autoAlign = false;
+        align();
+      }
+
+    };
+
+
+    let align = function () {
+      tempVector3
+        .set(0, 0, -1)
+        .applyQuaternion( tempQuaternion.copy(orientationQuaternion).inverse());
+      tempEuler.setFromQuaternion(
+        tempQuaternion.setFromRotationMatrix(
+          tempMatrix4.lookAt(tempVector3, v0, up)
+       )
+     );
+      tempEuler.set(0, tempEuler.y, 0);
+      alignQuaternion.setFromEuler(tempEuler);
+    };
+
+    update();
+
+
+
+
   }
 
   start (element: HTMLElement): void {
@@ -89,8 +231,15 @@ class Engine {
       }
     }, false);
     element.appendChild(this.internals.element);
-    // size (width/height)
-    this.resize();
+
+
+    window.addEventListener('onresize', this.onResize, false);
+    this.onResize();
+    window.addEventListener('orientationchange', this.onOrientationChange, false);
+    this.onOrientationChange();
+    window.addEventListener('deviceorientation', this.onDeviceOrientation, false);
+
+
     //
     // RENDER
     //
@@ -111,7 +260,10 @@ class Engine {
     // lights
     this.internals.lights = [];
     space.lights.forEach((light: Light) => {
-      const threeLight = new THREE.AmbientLight(0x999999);
+      const threeLight = new THREE.AmbientLight(
+        new THREE.Color(`rgb(${light.color.r}, ${light.color.g}, ${light.color.b})`).getHex(),
+        light.power
+      );
       this.internals.lights.push(threeLight);
       this.internals.scene.add(threeLight);
     });
@@ -144,8 +296,8 @@ class Engine {
     return space;
   }
 
-  setRenderCallback (f: Function): void {
-    this.internals.renderCallback = f;
+  setRenderCallback (callback: Function): void {
+    this.internals.renderCallback = callback;
   }
 
   render (): void {
@@ -153,8 +305,9 @@ class Engine {
       // positions
       processObjects(this.currentSpace.lights, this.internals.lights);
       processObjects(this.currentSpace.shapes, this.internals.shapes);
-      this.internals.camera.position.set(this.camera.point.x, this.camera.point.y, this.camera.point.z);
-      this.camera.renderCallback();
+      if (!this.vrCamera) {
+        processObject(this.camera, this.internals.camera);
+      }
       if (this.internals.camera.parent === null) this.internals.camera.updateMatrixWorld(false);
       // stereo effect
       if (this.stereoEffect) {
@@ -175,7 +328,6 @@ class Engine {
         renderer.render(scene, this.internals.camera);
       }
       this.internals.renderCallback();
-      this.resize();
     }.bind(this))(this.internals.renderer, this.internals.scene);
     window.requestAnimationFrame(this.render.bind(this));
   }
